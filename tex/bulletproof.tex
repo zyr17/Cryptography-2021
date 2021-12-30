@@ -1,0 +1,188 @@
+\chapter{数字范围证明}\label{chap:bulletproof}
+
+在前一章中，我们给出了基于Pedersen承诺的数字总和承诺方法，
+从而在隐藏交易金额的同时，任何人都可以验证交易的合法性。
+然而，单纯使用数字总和承诺是不够的，还有交易金额为负数和数字上溢的问题需要解决。
+
+交易金额为负是一种非常直接的``偷窃''数字货币的方式。
+我们可以向一个不存在的钱包支付金额为负的数字货币，
+从而增加数字货币的实际流通数量。仍以图\ref{fig:transaction}中的交易为例，
+假设输入金额分别为2和3，交易输出1为10，交易输出2为-8，交易找零为2，交易费为1，
+我们可以发现：$2+3=10+(-8)+2+1$。这笔交易看似成立了，
+真实交易输入只有5单位，而真实交易输出达到了13单位，完成了``无中生有''。
+在明文存储交易金额的系统中，验证交易金额是否均为正数十分简单。
+但是当交易金额变为了金额承诺，想在不泄露交易金额的情况下检查金额是否为负变得十分困难。
+
+另一个问题则是在计算机中特有的数字上溢问题。由于计算机中表示整数的位数有限，
+当数字过大时就会出现数值上溢，从而变成负数或其他很小的数字。
+比特币在早期就曾经出现过类似问题，有人使用数值上溢漏洞向多个账户共转账了1844亿比特币\cite{btcoverflow}，
+远远超过了比特币预计的2100万发行量。这是由于比特币客户端使用int64类型计算交易的输入输出是否相等，
+而没有检查交易是否溢出。比特币的最小单位1聪是$10^{-8}$比特币，
+1844亿比特币金额恰好造成了上溢。因此，如何在交易金额承诺后检查金额是否过大十分关键。
+
+为了解决上述两个问题，一种名为Bulletproofs的方法被提出\cite{bunz2018bulletproofs}。
+该算法提出了一种零知识的数字范围证明方法，相比其他范围证明方法需要更小的交互信息量，
+同时还支持在不大幅增加信息量的情况下同时证明多个数字的范围，
+非常适合用于数字货币交易的范围证明中。
+
+\section{向量内积承诺}
+
+Bulletproofs证明基于向量内积承诺\cite{bootle2016efficient}这种承诺方案。
+该承诺方案中，证明者保有两个秘密向量$\boldsymbol{a}$和$\boldsymbol{b}$，
+证明者需要在不泄露这两个向量的情况下，向验证者证明这两个向量的内积为$c$，即
+$\boldsymbol{a}\cdot\boldsymbol{b}=c$。
+
+在下面的证明中，不失一般性，我们假设两个向量的长度$n$为2的幂次，
+如果长度不满足条件则通过在向量后补0完成。将该证明方案记为$(G,\boldsymbol{g},\boldsymbol{h},A,B,c,n;\boldsymbol{a},\boldsymbol{b})$。
+其中$G$是单位点；$\boldsymbol{g}$和$\boldsymbol{h}$是长度和$\boldsymbol{a},\boldsymbol{b}$相同，
+均为椭圆曲线上的随机点，且验证者不知道这些点是单位点$G$的多少倍；$A=\boldsymbol{g}^{\boldsymbol{a}}, B=\boldsymbol{h}^{\boldsymbol{b}}$；
+$c=\boldsymbol{a}\cdot\boldsymbol{b}$；$n=|\boldsymbol{a}|$；
+$\boldsymbol{a},\boldsymbol{b}$为仅证明者知道的秘密向量。
+除了$\boldsymbol{a},\boldsymbol{b}$，其余参数均公开。
+
+向量内积承诺是一个交互式证明，且分为多个阶段。在每个阶段，当$n>1$时，
+执行过程1，否则执行过程2。为了简便，我们使用P代表证明者，V代表验证者，
+箭头表示谁向谁发送数据。
+
+\textbf{过程1：}
+\begin{enumerate}
+    \item P构造以下数据：
+    
+    将所有向量分成两部分等长向量，即：$(\boldsymbol{g}_1, \boldsymbol{g}_2) = \boldsymbol{g}; (\boldsymbol{h}_1, \boldsymbol{h}_2) = \boldsymbol{h}; (\boldsymbol{a}_1, \boldsymbol{a}_2) = \boldsymbol{a}; (\boldsymbol{b}_1, \boldsymbol{b}_2) = \boldsymbol{b}$。
+    
+    此时有：$A=\boldsymbol{g}_1^{\boldsymbol{a}_1}\boldsymbol{g}_2^{\boldsymbol{a}_2},B=\boldsymbol{h}_1^{\boldsymbol{b}_1}\boldsymbol{h}_2^{\boldsymbol{b}_2},c=\boldsymbol{a}_1\cdot\boldsymbol{b}_1+\boldsymbol{a}_2\cdot\boldsymbol{b}_2$。
+    
+    考虑两个函数$f_a(X)=\boldsymbol{a}_1X + \boldsymbol{a}_2X^2, f_b(X)=\boldsymbol{b}_1X^{-1} + \boldsymbol{b}_2X^{-2}$，
+    可以发现$f_a(X) \cdot f_b(X)$的常数项值为$c$。此时我们取随机数$x$，令$\boldsymbol{a}'=f_a(x), \boldsymbol{b}' = f_b(x), \boldsymbol{g}'=\boldsymbol{g}_1^{x^{-1}}+\boldsymbol{g}_2^{x^{-2}},\boldsymbol{h}'=\boldsymbol{h}_1^{x}+\boldsymbol{h}_2^{x^{2}}$。
+    
+    此时计算$\boldsymbol{g}'^{\boldsymbol{a}'}$，我们可以发现根据幂次为$x^{\{-1, 0, 1\}}$，
+    可以将底数分为三组。我们将三组底数分别记为$A_{\{-1, 0, 1\}}$。
+    同理计算$\boldsymbol{h}'^{\boldsymbol{b}'}$，并用$B_{\{-1, 0, 1\}}$表示底数，
+    拆分两式后则有：
+    
+    $$A_{-1}=\boldsymbol{g}_2^{\boldsymbol{a}_1}, A_0=\boldsymbol{g}_1^{\boldsymbol{a}_1}\boldsymbol{g}_2^{\boldsymbol{a}_2}=A,A_1=\boldsymbol{g}_1^{\boldsymbol{a}_2}$$
+    $$B_{-1}=\boldsymbol{h}_1^{\boldsymbol{B}_2}, B_0=\boldsymbol{h}_1^{\boldsymbol{b}_1}\boldsymbol{h}_2^{\boldsymbol{b}_2}=B,B_1=\boldsymbol{h}_2^{\boldsymbol{b}_1}$$
+    
+    最后$c'=\boldsymbol{a}'\cdot\boldsymbol{b}'=c_{-1}x^{-1}+c_0+c_1x, c_{-1}=\boldsymbol{a}_1\cdot\boldsymbol{b}_2,c_0=\boldsymbol{a}_1\cdot\boldsymbol{b}_1+\boldsymbol{a}_2\cdot\boldsymbol{b}_2=c,c_1=\boldsymbol{a}_2\cdot\boldsymbol{b}_1$。
+    
+    记$A'=\boldsymbol{g}'^{\boldsymbol{a}'}, B'=\boldsymbol{h}'^{\boldsymbol{b}'}$，
+    可以看到我们基于当前的向量内积承诺证明可以构造一个新的，向量长度仅为原来一半的向量内积证明。
+    如果新的证明能够通过，那说明当前的证明也能够通过。
+    
+    \item P$\to$V：发送$A_{-1, 0, 1}, B{-1, 0, 1}, c{-1, 0, 1}$。注意到$A_0, B_0, c_0$之前已经发送过，
+    在减少数据传输的情况下可以不再发送。
+    
+    \item V$\to$P：一个随机数x。
+    
+    \item 此时，P和V分别根据收到的参数构造新的一个向量内积证明问题：
+    
+    $$(G,\boldsymbol{g}',\boldsymbol{h}',A',B',c',\frac{n}{2};\boldsymbol{a}',\boldsymbol{b}')$$
+    
+    其中新参数分别如下计算：
+    
+    $$\boldsymbol{g}'=\boldsymbol{g}_1^{x^{-1}}+\boldsymbol{g}_2^{x^{-2}}$$
+    $$\boldsymbol{h}'=\boldsymbol{h}_1^{x}+\boldsymbol{h}_2^{x^{2}}$$
+    $$A'=\boldsymbol{g}'^{\boldsymbol{a}'}$$
+    $$B'=\boldsymbol{h}'^{\boldsymbol{b}'}$$
+    $$c'=c_{-1}x^{-1}+c_0+c_1x$$
+    $$\boldsymbol{a}'=\boldsymbol{a}_1x+\boldsymbol{a}_2x^2$$
+    $$\boldsymbol{b}'=\boldsymbol{b}_1x^{-1}+\boldsymbol{b}_2x^{-2}$$
+    
+    就构造成了一个新的向量内积证明问题，但是向量长度减小了。之后进行下一阶段，
+    求解新的向量内积证明问题。
+\end{enumerate}
+
+\textbf{过程2：}
+\begin{enumerate}
+    \item P$\to$V：发送当前的$(a,b)$
+    \item V$\to$P：计算$A=g^a, B=h^b, c=ab$。若三式均成立则接受该证明，否则拒绝该证明。
+\end{enumerate}
+
+由于$\boldsymbol{g}$和$\boldsymbol{h}$都是验证者未知的随机取的点，
+因此验证者无法在该过程中对向量的真实值进行还原。同样，因为每次验证的$x$都是验证者随机选取的，
+如果证明者未持有对应向量，就无法对任意$x$给出证明。
+
+\section{Bulletproofs证明}
+
+Bulletproofs证明是一种基于向量内积承诺证明来完成范围证明的方案。
+由于负数在计算机中使用二进制表示等价于首位为1的正数，即十分巨大的正数，
+因此和数字上溢问题一样，只要保证交易金额不是过大即可。
+在Bulletproofs中，我们尝试证明一个交易金额可以表示为若干2的幂次之和。
+以比特币为例以其最小单位聪，即$10^{-8}$比特币来计算，
+比特币共计$2.1\times10^{15}$，即只需要51位即可表示。因此，对于交易中声明的交易金额$v$，
+我们只要证明$v\in[0, 2^{51}-1]$即可证明该交易金额合法。
+
+结合前一章我们对交易金额做出了承诺，我们将范围证明做如下定义：
+$v$是真实交易金额，$V=rH + vG$是该交易金额使用遮盖参数$r$的承诺。
+证明者需要向验证者证明其交易金额满足$v\in[0,2^n-1]$。在该过程中，
+我们可以公开$G, H, V, n$，但是需要保密$v, r$。
+
+我们使用$a=v\{0,1\}^n$为$v$表示成二进制数时每个比特位的值组成的向量。
+显然，$\langle a, I_2^n\rangle=v$，其中$I_j^n=(j^0, j^1, j^2, \dots, j^{n-1})$，
+并特别规定$j=0$时第一项为0。
+同时我们还需要保证$a$中元素均为1，我们通过计算新的一个向量$a_R=a-I_1$，
+且$a\cdot a_R=I_0$来保证。
+
+可以看到，目前有两个不同的约束来保证$a$是由01组成的，且是$v$的二进制表示的一个向量。
+为了利用向量内积证明，我们将其改造成使用一个向量内积证明就可以的形式。
+我们可以发现，如果我们想证明一个向量$k=I_0$，我们只需要让验证者发送一个随机数$l$，
+并由证明者使用内积承诺证明$\langle k, l^n\rangle=I_0$即可。因为如果$k$不全为0，
+那么对于任意随机数，能够通过验证的概率是可忽略的。这听起来很多此一举，
+但是利用这种方法我们将一个向量内容的证明问题转换为了使用内积承诺来证明，
+这使得我们可以将元素均为1中构造的两条公式转为向量内积承诺的形式。
+在收到验证者指定的随机数$y$后，我们有：
+%
+$$a_R=a-I_1 \to a - a_R - I_1 = I_0 \to \langle a - a_R - I_1, y^n\rangle=0$$
+%
+$$a\cdot a_R=I_0 \to \langle a, a_R \cdot y^n\rangle=0$$
+%
+第一个公式使用了上述结论。第二个公式也很显然，对其中一边的向量放大若干倍，其内积依然为0。
+
+此时验证者再提供一个新的随机数$z$，我们可以将上述两个式子和最开始的值相等式子组合得到：
+%
+$$z^2\cdot\langle a, I_2\rangle + z\cdot\langle a - a_R - I_1, y^n\rangle + \langle a, a_R \cdot y^n\rangle=z^2\cdot v$$
+
+此时我们可以对该式子的左右分别求和，然后问题就转化成了一个标准的向量内积问题。
+我们将在之后解决证明中的隐私泄露问题，即证明中不能明文利用到$v, a, a_R$。
+
+我们将上式展开，并在左右同一加上$\langle -z\cdot I_1, z^2\cdot I_2 + z\cdot y^n\rangle$，
+然后化简。需要注意，$y^n=y^n\cdot I_1, \langle a_R, y^n\rangle = \langle I_1, a_R\cdot y^n\rangle$，得到：
+%
+$$\langle a - z\cdot I_1, y^n(a_R + z\cdot I_1) + z^2\cdot I_2\rangle = z^2\cdot v + (z - z^2) \langle I_1, y^n\rangle - z^3\langle I_1, I_2\rangle$$
+
+此时，问题已经转化为了一个可以使用向量内积问题证明的问题。
+在完成转换后，我们使用向量内积证明的方式进行计算，如果证明者证明了向量内积的承诺和$v$的承诺相等，
+就证明了$v$的范围是在给定范围内的。然而，此时左侧向量$a - z\cdot I_1$求得的$A$可以简单推算出$v$，
+因此还需要一步遮盖方法。我们使用遮盖向量$s, s_R$对$a, a_R$进行遮盖。
+验证者会随机给出多个随机数$X$，上式的左右向量分别变为：
+
+$$
+\begin{array}{l}
+l(X)=\left(a+s \cdot X\right)-z \cdot I_1  \\
+r(X)=y^n \cdot\left(\left(a_{R}+s_{R} \cdot X\right)+z \cdot I_1\right)+z^{2} \cdot I_2  \\
+t(X)=\langle l(X), r(X)\rangle=t_{0}+t_{1} \cdot X+t_{2} \cdot X^{2} 
+\end{array}
+$$
+
+此时经过遮盖，向量已经不会泄露原始信息。由于包含遮盖的项必定包含$X$，
+此时，我们需要证明$t_0$和之前等式右边的结果相同。同时，证明$t(X)=\langle l(X), r(X)\rangle$，
+且$l(X), r(X)$均成立。因此，证明者可以通过提前承诺$t_1$和$t_2$，
+然后在每次获取随机数$x$时生成$l(x), r(x)$，并通过向量内积承诺计算这两个向量的内积。
+验证者需要验证这两个向量的内积，结合之前给出的$V, t_1, t_2$的承诺计算得到的$t(x)$是否相等。
+至此，我们可以通过Bulletproofs方法对一个数字的范围进行证明。
+
+然而，一笔交易中包含很多的数字，如果要对每个数字都进行一次范围证明代价较大。
+注意到在Bulletproofs中实际上将所有数字使用二进制表示来完成证明，
+我们可以将所有数字的二进制表示串连起来，这样通过一次证明即可完成所有数字的范围证明。
+例如有两个数字$a^0, a^1$，我们需要证明所有数字都满足$a\in[0, 7]$，
+那么我们可以造下面两个向量和内积：
+%
+$$A=\langle a^0_0, a^0_1, a^0_2, a^0_3, a^1_0, a^1_1, a^1_2, a^1_3 \rangle$$
+%
+$$B = \langle 0, 1, 2, 4, 0, 1, 2, 4\rangle$$
+%
+$$c=a^0 + 8 a^1$$
+%
+就可以通过一次证明完成。由于向量内积承诺进行的轮数与向量长度相关，
+对于长度为$n$的向量其证明复杂度为$O(log_2n)$，相比每个数字依次证明的复杂度$O(mlog_2n)$，
+这种证明方式的复杂度下降为$O(log_2nm)$。
